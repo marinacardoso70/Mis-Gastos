@@ -1,24 +1,27 @@
 # Mis Gastos
 
-Gestor personal hecho con Google Sheets y Apps Script. Registra gastos e ingresos por texto, muestra movimientos por día, mes o año y calcula el equivalente en pesos mexicanos.
+Gestor personal en Google Sheets y Apps Script. Registra gastos e ingresos por texto, muestra todos los movimientos en la web, permite filtrar por día, mes o año y muestra gastos por rubro.
 
 ## Instalación inicial
 
-1. Crear una hoja de cálculo de Google.
-2. Abrir **Extensiones → Apps Script**.
-3. Copiar el contenido de `Code.gs` en el archivo `Código.gs` del proyecto.
-4. Guardar y ejecutar `instalarGestor` una vez; autorizar los permisos.
-5. En **Implementar → Nueva implementación**, elegir **Aplicación web**. Ejecutar como **Yo** y dar acceso **Solo yo**.
-6. Abrir la URL de la aplicación web.
+1. Crear una hoja de cálculo de Google y abrir **Extensiones → Apps Script**.
+2. Copiar `Code.gs` en `Código.gs` del proyecto y guardar.
+3. Ejecutar `instalarGestor` una vez y autorizar los permisos.
+4. En **Implementar → Nueva implementación**, elegir **Aplicación web**, ejecutar como **Yo** y limitar el acceso a la cuenta propia.
+5. Abrir la URL de la aplicación.
+
+## Lectura de tickets
+
+La aplicación permite tomar o seleccionar una foto JPG/PNG. Google Drive convierte la imagen temporalmente en un documento mediante OCR; el documento temporal se elimina después de extraer el texto. Se propone comercio, fecha, total y moneda. Revisar y corregir rubro, pago e importe antes de guardar. Se registra un gasto por el total del ticket y se conserva el texto reconocido en la columna `Texto ticket` de la hoja y en el detalle web.
+
+Para activar la lectura en Apps Script: en el panel izquierdo, abrir **Servicios → + → Drive API → Agregar**. Guardar el proyecto. Al usar la lectura por primera vez, completar la autorización solicitada por Google. Esta función no necesita Cloud Vision ni una clave de API separada.
 
 ## Actualizaciones
 
-Cuando se modifique `Code.gs` en GitHub, los cambios **no llegan automáticamente** a Apps Script. Copiar el código actualizado al proyecto de Apps Script, guardar y usar **Implementar → Administrar implementaciones → Editar → Nueva versión → Implementar**.
-
-La hoja de datos no se borra al actualizar. Para agregar equivalentes MXN a movimientos anteriores, ejecutar `actualizarConversionesExistentes` (hasta 100 registros por ejecución).
+GitHub no sincroniza Apps Script automáticamente. Copiar el código nuevo a `Código.gs`, guardar y usar **Implementar → Administrar implementaciones → lápiz → Nueva versión → Implementar**. La hoja de datos no se borra.
 
 ## Monedas y tipos de cambio
 
-Se admiten MXN, UYU, ARS y USD. Si el texto solo dice «pesos», elegir la moneda en el selector para evitar ambigüedad. El equivalente MXN se calcula con la cotización de referencia de Frankfurter de la fecha indicada y se guarda con la tasa y fecha efectivamente utilizadas. Si no hay cotización, el movimiento no se guarda para evitar un total engañoso.
+Se admiten MXN, UYU, ARS y USD. Si el texto solo dice «pesos», seleccionar la moneda adecuada. Cuando la consulta de cotización no responde, el gasto se guarda en su moneda original y queda pendiente la conversión a MXN. Para reintentar conversiones anteriores, ejecutar `actualizarConversionesExistentes` (hasta 100 por ejecución). Los movimientos pendientes no se suman al gráfico MXN.
 
-No subir hojas con movimientos personales, contraseñas ni claves de API a este repositorio.
+No subir hojas con movimientos personales, contraseñas ni claves a este repositorio.
