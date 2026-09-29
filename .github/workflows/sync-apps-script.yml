@@ -25,10 +25,8 @@ jobs:
       - name: Comprobar configuración
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
-          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
         run: |
           test -n "$CLASPRC_JSON" || { echo "Falta CLASPRC_JSON en GitHub Secrets"; exit 1; }
-          test -n "$DEPLOYMENT_ID" || { echo "Falta DEPLOYMENT_ID en GitHub Secrets"; exit 1; }
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           chmod 600 "$HOME/.clasprc.json"
       - name: Instalar clasp
@@ -44,7 +42,7 @@ jobs:
         run: clasp push --force
       - name: Publicar sobre la misma aplicación web
         env:
-          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+          DEPLOYMENT_ID: AKfycbwNzKbsmy7Eow0cpu9k7UWEINA--kfIjvM8fC6nePyQiFogKnk2rQtQyqWCLwDtBOY1hQ
         run: |
           VERSION_OUTPUT=$(clasp version "GitHub ${GITHUB_SHA:0:8}")
           VERSION=$(printf '%s\n' "$VERSION_OUTPUT" | sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+).*/\1/p' | tail -n 1)
