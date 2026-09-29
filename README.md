@@ -18,14 +18,14 @@ Para activar la lectura en Apps Script: en el panel izquierdo, abrir **Servicios
 
 ## Actualizaciones
 
-El repositorio ya tiene una automatización para sincronizar `Code.gs` y actualizar la misma aplicación web al cambiar `main`. Se activará cuando se completen los dos secretos de GitHub descritos abajo. Hasta entonces, hay que seguir copiando el código manualmente. La hoja de datos no se borra.
+El repositorio ya tiene una automatización para sincronizar `Code.gs` y actualizar la misma aplicación web al cambiar `main`. Se activará cuando se complete la autorización de Google en GitHub descrita abajo. Hasta entonces, hay que seguir copiando el código manualmente. La hoja de datos no se borra.
 
 ### Conexión inicial GitHub → Apps Script
 
 1. Activar **Google Apps Script API** en `https://script.google.com/home/usersettings` de la cuenta propietaria de Gastos MCA.
 2. En esa cuenta, instalar Node.js y `@google/clasp`, ejecutar `clasp login` y obtener el archivo local `~/.clasprc.json`. Ese archivo contiene un token de acceso: **no enviarlo por chat ni subirlo al repositorio**.
 3. En GitHub, abrir **Mis-Gastos → Settings → Secrets and variables → Actions → New repository secret**. Crear `CLASPRC_JSON` con el contenido completo de `~/.clasprc.json`.
-4. Crear otro secret `DEPLOYMENT_ID` con el ID de la aplicación web actual: está entre `/s/` y `/exec` en la URL de la web publicada, o en **Implementar → Administrar implementaciones**. No usar el Script ID del editor como Deployment ID.
+4. El ID de la aplicación web actual ya está configurado en el workflow a partir del enlace proporcionado.
 5. En **Actions → Sincronizar y publicar Mis Gastos → Run workflow**, ejecutar una vez y comprobar que termina en verde. Si falla, revisar el mensaje del paso correspondiente antes de volver a intentarlo.
 
 El workflow descarga primero el proyecto actual, conserva sus otros archivos y su manifiesto, sustituye únicamente `Code.gs`, sube el proyecto y actualiza el deployment existente. Si no encuentra `Code.gs` o `appsscript.json`, cancela antes de subir. Después de una ejecución correcta, los cambios futuros de `Code.gs` en `main` se publican automáticamente. No editar manualmente `Código.gs` a partir de ese momento, porque el siguiente push lo reemplazará.
