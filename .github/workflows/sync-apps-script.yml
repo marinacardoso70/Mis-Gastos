@@ -1,0 +1,52 @@
+name: Sincronizar y publicar Mis Gastos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Code.gs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mis-gastos-apps-script
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Comprobar configuración
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+        run: |
+          test -n "$CLASPRC_JSON" || { echo "Falta CLASPRC_JSON en GitHub Secrets"; exit 1; }
+          test -n "$DEPLOYMENT_ID" || { echo "Falta DEPLOYMENT_ID en GitHub Secrets"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+      - name: Instalar clasp
+        run: npm install -g @google/clasp
+      - name: Descargar proyecto actual y preservar sus archivos
+        run: |
+          mkdir -p .clasp-work
+          clasp pull
+          test -f .clasp-work/Code.gs || { echo "No se encontró Code.gs en Apps Script. Se canceló antes de subir archivos."; exit 1; }
+          test -f .clasp-work/appsscript.json || { echo "No se encontró el manifiesto. Se canceló antes de subir archivos."; exit 1; }
+          cp Code.gs .clasp-work/Code.gs
+      - name: Actualizar código del editor
+        run: clasp push --force
+      - name: Publicar sobre la misma aplicación web
+        env:
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+        run: |
+          VERSION_OUTPUT=$(clasp version "GitHub ${GITHUB_SHA:0:8}")
+          VERSION=$(printf '%s\n' "$VERSION_OUTPUT" | sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+).*/\1/p' | tail -n 1)
+          test -n "$VERSION" || { echo "No se pudo leer el número de versión: $VERSION_OUTPUT"; exit 1; }
+          clasp redeploy "$DEPLOYMENT_ID" "$VERSION" "GitHub ${GITHUB_SHA:0:8}"
