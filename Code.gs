@@ -56,6 +56,12 @@ function cotizacionMXN_(moneda, fecha) {
   return result;
 }
 
+/** Un problema temporal del proveedor no debe impedir registrar el gasto. */
+function cotizacionDisponible_(moneda, fecha) {
+  try { return cotizacionMXN_(moneda, fecha); }
+  catch (e) { return null; }
+}
+
 /** Ejecutar manualmente una vez para convertir los registros anteriores, hasta 100 por ejecución. */
 function actualizarConversionesExistentes() {
   const sh=hoja_(); asegurarColumnas_(sh);
@@ -65,7 +71,8 @@ function actualizarConversionesExistentes() {
     const r=rows[i];
     if (r[10] !== '' || !(r[1] instanceof Date) || !(Number(r[3]) > 0) || !['MXN','ARS','UYU','USD'].includes(r[4])) continue;
     const fecha=Utilities.formatDate(r[1],zona,'yyyy-MM-dd');
-    const c=cotizacionMXN_(r[4],fecha);
+    const c=cotizacionDisponible_(r[4],fecha);
+    if (!c) continue;
     sh.getRange(i+1,11,1,4).setValues([[Math.round(Number(r[3])*c.rate*100)/100,c.rate,c.date,c.source]]);
     actualizados++;
   }
@@ -115,8 +122,8 @@ function guardarMovimiento(datos) {
   const fecha = new Date(fechaTexto + 'T12:00:00');
   if (isNaN(fecha.getTime()) || Utilities.formatDate(fecha,Session.getScriptTimeZone(),'yyyy-MM-dd') !== fechaTexto) throw new Error('Fecha inválida.');
   if (fechaTexto > Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyy-MM-dd')) throw new Error('La fecha no puede ser futura.');
-  const cotizacion = cotizacionMXN_(moneda, fechaTexto);
-  const montoMXN = Math.round(monto*cotizacion.rate*100)/100;
+  const cotizacion = cotizacionDisponible_(moneda, fechaTexto);
+  const montoMXN = cotizacion ? Math.round(monto*cotizacion.rate*100)/100 : null;
   const categoria = String(datos.categoria || 'Otros').slice(0,80);
   const descripcion = String(datos.descripcion || '').slice(0,500);
   const cuenta = String(datos.cuenta || 'Efectivo').slice(0,80);
@@ -128,9 +135,10 @@ function guardarMovimiento(datos) {
     const sh=hoja_(); asegurarColumnas_(sh);
     sh.appendRow([Utilities.getUuid(), fecha, tipo, monto, moneda,
       seguro(categoria), seguro(descripcion), seguro(cuenta), 'Web', new Date(),
-      montoMXN, cotizacion.rate, cotizacion.date, cotizacion.source]);
+      montoMXN === null ? '' : montoMXN,
+      cotizacion ? cotizacion.rate : '', cotizacion ? cotizacion.date : '', cotizacion ? cotizacion.source : 'Pendiente']);
   } finally { lock.releaseLock(); }
-  return {mensaje:'Movimiento guardado',tipo,categoria,moneda,monto,montoMXN,fecha:fechaTexto,cotizacion};
+  return {mensaje:montoMXN === null ? 'Movimiento guardado. Conversión a MXN pendiente.' : 'Movimiento guardado',tipo,categoria,moneda,monto,montoMXN,fecha:fechaTexto,cotizacion};
 }
 
 function guardarTexto(texto, fecha, monedaElegida) { const datos = parsearMovimiento(texto); datos.fecha = fecha; if (monedaElegida && monedaElegida !== 'Auto') datos.moneda = monedaElegida; return guardarMovimiento(datos); }
@@ -168,7 +176,7 @@ let datos=null;const $=id=>document.getElementById(id);const esc=s=>String(s??''
 const hoy=new Date();const fechaLocal=[hoy.getFullYear(),String(hoy.getMonth()+1).padStart(2,'0'),String(hoy.getDate()).padStart(2,'0')].join('-');
 $('fecha').value=fechaLocal;$('filtro').value=fechaLocal;cargar();
 let guardando=false;
-function guardar(){if(guardando)return;let t=$('texto').value;if(!t.trim()){$('estado').textContent='Escribí un movimiento.';return}guardando=true;$('boton').disabled=true;$('estado').textContent='Guardando…';google.script.run.withSuccessHandler(m=>{guardando=false;$('boton').disabled=false;$('estado').textContent=m.mensaje;$('ultimo').style.display='block';$('ultimo').textContent=m.tipo+': '+m.monto.toFixed(2)+' '+m.moneda+' · '+m.categoria+' · '+m.montoMXN.toFixed(2)+' MXN (tasa '+m.cotizacion.rate+', fecha '+m.cotizacion.date+')';$('texto').value='';$('filtro').value=$('fecha').value;cargar();$('texto').focus()}).withFailureHandler(e=>{guardando=false;$('boton').disabled=false;$('estado').textContent=e.message}).guardarTexto(t,$('fecha').value,$('moneda').value)}
+function guardar(){if(guardando)return;let t=$('texto').value;if(!t.trim()){$('estado').textContent='Escribí un movimiento.';return}guardando=true;$('boton').disabled=true;$('estado').textContent='Guardando…';google.script.run.withSuccessHandler(m=>{guardando=false;$('boton').disabled=false;$('estado').textContent=m.mensaje;$('ultimo').style.display='block';$('ultimo').textContent=m.tipo+': '+m.monto.toFixed(2)+' '+m.moneda+' · '+m.categoria+(m.montoMXN===null?' · Conversión a MXN pendiente':' · '+m.montoMXN.toFixed(2)+' MXN (tasa '+m.cotizacion.rate+', fecha '+m.cotizacion.date+')');$('texto').value='';$('filtro').value=$('fecha').value;cargar();$('texto').focus()}).withFailureHandler(e=>{guardando=false;$('boton').disabled=false;$('estado').textContent=e.message}).guardarTexto(t,$('fecha').value,$('moneda').value)}
 function cargar(){google.script.run.withSuccessHandler(p=>{datos=p;render()}).withFailureHandler(e=>$('grafico').textContent=e.message).datosPanel($('modo').value,$('filtro').value)}
 function render(){
  let p=datos, mx=p.totalMXN;
