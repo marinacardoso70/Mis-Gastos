@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - Code.gs
+      - .github/workflows/sync-apps-script.yml
 
 permissions:
   contents: read
@@ -35,9 +36,9 @@ jobs:
         run: |
           mkdir -p .clasp-work
           clasp pull
-          test -f .clasp-work/Code.gs || { echo "No se encontró Code.gs en Apps Script. Se canceló antes de subir archivos."; exit 1; }
+          test -f .clasp-work/Código.js || { echo "No se encontró Código.js en Apps Script. Se canceló antes de subir archivos."; exit 1; }
           test -f .clasp-work/appsscript.json || { echo "No se encontró el manifiesto. Se canceló antes de subir archivos."; exit 1; }
-          cp Code.gs .clasp-work/Code.gs
+          cp Code.gs .clasp-work/Código.js
       - name: Actualizar código del editor
         run: clasp push --force
       - name: Publicar sobre la misma aplicación web
