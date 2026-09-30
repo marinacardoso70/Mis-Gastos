@@ -1,3 +1,4 @@
+// Sincronización automática desde GitHub: Mis-Gastos.
 /** Mi Gestor Personal — Google Apps Script vinculado a una hoja de cálculo.
  * Ejecutar instalarGestor() una vez y desplegar como aplicación web.
  * Registra gastos e ingresos escritos en lenguaje simple; el panel es privado.
