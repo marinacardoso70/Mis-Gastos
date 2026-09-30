@@ -18,7 +18,7 @@ Para activar la lectura en Apps Script: en el panel izquierdo, abrir **Servicios
 
 ## Actualizaciones
 
-El repositorio ya tiene una automatización para sincronizar `Code.gs` y actualizar la misma aplicación web al cambiar `main`. Se activará cuando se complete la autorización de Google en GitHub descrita abajo. Hasta entonces, hay que seguir copiando el código manualmente. La hoja de datos no se borra.
+El repositorio ya tiene una automatización para sincronizar `Code.gs` y actualizar la misma aplicación web al cambiar `main`. La conexión quedó verificada con una publicación correcta el 30 de septiembre de 2026. La hoja de datos no se borra.
 
 ### Conexión inicial GitHub → Apps Script
 
@@ -28,7 +28,7 @@ El repositorio ya tiene una automatización para sincronizar `Code.gs` y actuali
 4. El ID de la aplicación web actual ya está configurado en el workflow a partir del enlace proporcionado.
 5. En **Actions → Sincronizar y publicar Mis Gastos → Run workflow**, ejecutar una vez y comprobar que termina en verde. Si falla, revisar el mensaje del paso correspondiente antes de volver a intentarlo.
 
-El workflow descarga primero el proyecto actual, conserva sus otros archivos y su manifiesto, sustituye únicamente `Code.gs`, sube el proyecto y actualiza el deployment existente. Si no encuentra `Code.gs` o `appsscript.json`, cancela antes de subir. Después de una ejecución correcta, los cambios futuros de `Code.gs` en `main` se publican automáticamente. No editar manualmente `Código.gs` a partir de ese momento, porque el siguiente push lo reemplazará.
+El workflow descarga primero el proyecto actual, conserva sus otros archivos y su manifiesto, sustituye únicamente el contenido de `Código.js` con el `Code.gs` del repositorio, sube el proyecto y actualiza el deployment existente. Si no encuentra `Código.js` o `appsscript.json`, cancela antes de subir. Después de una ejecución correcta, los cambios futuros de `Code.gs` en `main` se publican automáticamente. No editar manualmente `Código.gs` a partir de ese momento, porque el siguiente push lo reemplazará.
 
 ## Monedas y tipos de cambio
 
