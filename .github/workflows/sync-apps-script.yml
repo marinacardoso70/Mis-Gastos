@@ -48,4 +48,6 @@ jobs:
           VERSION_OUTPUT=$(clasp version "GitHub ${GITHUB_SHA:0:8}")
           VERSION=$(printf '%s\n' "$VERSION_OUTPUT" | sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+).*/\1/p' | tail -n 1)
           test -n "$VERSION" || { echo "No se pudo leer el número de versión: $VERSION_OUTPUT"; exit 1; }
-          clasp redeploy "$DEPLOYMENT_ID" "$VERSION" "GitHub ${GITHUB_SHA:0:8}"
+          DEPLOY_OUTPUT=$(clasp update-deployment "$DEPLOYMENT_ID" --versionNumber "$VERSION" --description "GitHub ${GITHUB_SHA:0:8}" 2>&1)
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          printf '%s\n' "$DEPLOY_OUTPUT" | grep -F "$DEPLOYMENT_ID @$VERSION" || { echo "No se confirmó la publicación de la versión esperada"; exit 1; }
