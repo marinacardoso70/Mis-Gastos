@@ -49,9 +49,9 @@ function cotizacionMXN_(moneda, fecha) {
   let response;
   try { response = UrlFetchApp.fetch(url,{muteHttpExceptions:true}); }
   catch(e) { throw new Error('No pude consultar el tipo de cambio. Probá de nuevo más tarde.'); }
-  if (response.getResponseCode() !== 200) throw new Error('No hay cotización '+moneda+'/MXN para esta fecha. No se guardó el movimiento.');
+  if (response.getResponseCode() !== 200) throw new Error('El proveedor no devolvió cotización '+moneda+'/MXN para '+fecha+' (HTTP '+response.getResponseCode()+').');
   const d = JSON.parse(response.getContentText());
-  if (!(Number(d.rate) > 0) || !d.date) throw new Error('La respuesta del tipo de cambio es inválida. No se guardó el movimiento.');
+  if (!(Number(d.rate) > 0) || !d.date) throw new Error('La respuesta del tipo de cambio es inválida.');
   const result={rate:Number(d.rate),date:String(d.date),source:'Frankfurter (referencia)'};
   cache.put(key,JSON.stringify(result),21600);
   return result;
@@ -63,21 +63,40 @@ function cotizacionDisponible_(moneda, fecha) {
   catch (e) { return null; }
 }
 
-/** Ejecutar manualmente una vez para convertir los registros anteriores, hasta 100 por ejecución. */
+/** Reintenta las conversiones pendientes desde la web y conserva la causa de los fallos. */
+function reintentarConversiones() {
+  const lock=LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh=hoja_(); asegurarColumnas_(sh);
+    const rows=sh.getDataRange().getValues(), zona=Session.getScriptTimeZone();
+    const limite=Date.now()+45000, errores=[], consultas={};
+    let actualizados=0, intentados=0, pendientes=0;
+    for(let i=1;i<rows.length;i++) {
+      const r=rows[i];
+      if(r[10]!=='' || !(r[1] instanceof Date) || !(Number(r[3])>0) || !['MXN','ARS','UYU','USD'].includes(r[4])) continue;
+      if(intentados>=25 || Date.now()>limite) { pendientes++; continue; }
+      intentados++;
+      const fecha=Utilities.formatDate(r[1],zona,'yyyy-MM-dd'), key=r[4]+'_'+fecha;
+      if(!Object.prototype.hasOwnProperty.call(consultas,key)) {
+        try { consultas[key]={cotizacion:cotizacionMXN_(r[4],fecha)}; }
+        catch(e) { consultas[key]={error:String(e.message||e)}; }
+      }
+      const resultado=consultas[key], cotizacion=resultado.cotizacion;
+      if(!cotizacion) {
+        pendientes++;
+        if(!errores.includes(resultado.error)) errores.push(resultado.error);
+        continue;
+      }
+      sh.getRange(i+1,11,1,4).setValues([[Math.round(Number(r[3])*cotizacion.rate*100)/100,cotizacion.rate,cotizacion.date,cotizacion.source]]);
+      actualizados++;
+    }
+    return {actualizados,pendientes,errores:errores.slice(0,3)};
+  } finally { lock.releaseLock(); }
+}
 function actualizarConversionesExistentes() {
-  const sh=hoja_(); asegurarColumnas_(sh);
-  const rows=sh.getDataRange().getValues(), zona=Session.getScriptTimeZone();
-  let actualizados=0;
-  for(let i=1;i<rows.length && actualizados<100;i++) {
-    const r=rows[i];
-    if (r[10] !== '' || !(r[1] instanceof Date) || !(Number(r[3]) > 0) || !['MXN','ARS','UYU','USD'].includes(r[4])) continue;
-    const fecha=Utilities.formatDate(r[1],zona,'yyyy-MM-dd');
-    const c=cotizacionDisponible_(r[4],fecha);
-    if (!c) continue;
-    sh.getRange(i+1,11,1,4).setValues([[Math.round(Number(r[3])*c.rate*100)/100,c.rate,c.date,c.source]]);
-    actualizados++;
-  }
-  return actualizados+' movimientos anteriores convertidos. Si faltan, ejecutá de nuevo.';
+  const r=reintentarConversiones();
+  return r.actualizados+' movimientos convertidos. '+r.pendientes+' pendientes.'+(r.errores.length?' '+r.errores.join(' '):'');
 }
 
 function parsearMovimiento(texto) {
@@ -220,7 +239,7 @@ function doGet() {
 
 function PANEL_HTML_() { return `<!doctype html><html lang="es"><head><meta charset="utf-8"><style>
 body{font:16px system-ui;margin:0;background:#f7f8f5;color:#24332d}main{max-width:1000px;margin:auto;padding:20px}h1{color:#32624c}section{background:white;border-radius:15px;padding:18px;margin:16px 0;box-shadow:0 2px 10px #0001}input,select,button{font:inherit;padding:10px;border:1px solid #ccd5ce;border-radius:8px}input[type=text]{width:min(95%,540px)}button{background:#357458;color:white;border:0;cursor:pointer}.grid{display:flex;gap:12px;flex-wrap:wrap}.card{background:#eaf3ec;padding:14px;border-radius:12px;min-width:180px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}.scroll{overflow:auto}.bar{height:18px;background:#6b9e79;border-radius:6px}.chart-row{display:grid;grid-template-columns:minmax(90px,150px) 1fr;gap:10px;align-items:center;margin:12px 0}.chart-track{background:#edf3ee;border-radius:6px}.chart-label{overflow-wrap:anywhere}small{color:#666}
-</style></head><body><main><h1>Mi Gestor Personal</h1><section><h2>Registrar movimiento</h2><p>Por ejemplo: “gasté 250 pesos en supermercado” o “cobré 800 USD por consulta”.</p><input id="texto" type="text" placeholder="Escribí tu gasto o ingreso" onkeydown="if(event.key==='Enter')guardar()"><button id="boton" onclick="guardar()">Guardar</button><p><label>Moneda <select id="moneda"><option value="Auto">Detectar del texto</option><option value="UYU">Pesos uruguayos</option><option value="MXN">Pesos mexicanos</option><option value="ARS">Pesos argentinos</option><option value="USD">Dólares</option></select></label></p><p><label>Fecha del movimiento <input id="fecha" type="date"></label></p><p><label>Cómo pagué <select id="cuenta"><option>AMEX AM MCA</option><option>AMEX AM DRC</option><option>AMEX AM ERCA</option><option>AMEX PLAT MCA</option><option>AMEX PLAT DRC</option><option>Tarjeta BBva</option><option>VISA INB</option><option>TRANS BBVa</option><option>TRANS Galicia</option><option selected>Efectivo</option></select></label></p><p id="estado" role="status"></p><div id="ultimo" class="card" style="display:none"></div><small>Revisá la categoría y la moneda en la tabla; la interpretación del texto es básica.</small></section><section><h2>Leer un ticket</h2><p>Sacá una foto o elegí una imagen. Revisá los datos antes de guardar.</p><form id="formTicket" onsubmit="event.preventDefault();leerFoto()"><input id="foto" name="foto" type="file" accept="image/jpeg,image/png" capture="environment" required><button id="botonLeer" type="submit">Leer ticket</button></form><p id="estadoTicket" role="status"></p><div id="borradorTicket" style="display:none"><p><label>Comercio o descripción <input id="ticketDescripcion" type="text"></label></p><p><label>Fecha <input id="ticketFecha" type="date"></label> <label>Total <input id="ticketMonto" type="number" min="0.01" step="0.01"></label></p><p><label>Moneda <select id="ticketMoneda"><option>UYU</option><option>MXN</option><option>ARS</option><option>USD</option></select></label> <label>Rubro <select id="ticketCategoria"><option>Supermercado</option><option>Comida</option><option>Transporte</option><option>Casa</option><option>Servicios</option><option>Salud</option><option>Ropa</option><option>Ocio</option><option>Viajes</option><option>Educación</option><option>Otros</option></select></label></p><p><label>Cómo pagué <select id="ticketCuenta"><option>AMEX AM MCA</option><option>AMEX AM DRC</option><option>AMEX AM ERCA</option><option>AMEX PLAT MCA</option><option>AMEX PLAT DRC</option><option>Tarjeta BBva</option><option>VISA INB</option><option>TRANS BBVa</option><option>TRANS Galicia</option><option selected>Efectivo</option></select></label></p><p><label>Texto leído del ticket<br><textarea id="ticketTexto" rows="9" style="width:95%"></textarea></label></p><button id="botonTicket" type="button" onclick="guardarFoto()">Guardar gasto del ticket</button></div></section><section><label>Ver <select id="modo" onchange="cambiarModo()"><option>Todos</option><option>Día</option><option>Mes</option><option>Año</option></select></label> <label id="etiquetaFiltro" style="display:none">Fecha <input id="filtro" type="date" onchange="cargar()"></label></section><section><h2>Mis movimientos</h2><p id="cantidad">Cargando movimientos…</p><div class="scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Monto original</th><th>Equivalente MXN</th><th>Categoría</th><th>Cómo pagué</th><th>Descripción</th><th></th></tr></thead><tbody id="filas"></tbody></table></div><p><button onclick="csv()">Descargar CSV</button></p></section><section><h2>Gastos por rubro</h2><p>En pesos mexicanos para los movimientos mostrados, de mayor a menor.</p><div id="grafico"></div><div class="scroll"><table><thead><tr><th>Rubro</th><th>Gasto (MXN)</th><th>Porcentaje</th></tr></thead><tbody id="rubros"></tbody></table></div><p id="pendientes" style="display:none"><small></small></p></section></main><script>
+</style></head><body><main><h1>Mi Gestor Personal</h1><section><h2>Registrar movimiento</h2><p>Por ejemplo: “gasté 250 pesos en supermercado” o “cobré 800 USD por consulta”.</p><input id="texto" type="text" placeholder="Escribí tu gasto o ingreso" onkeydown="if(event.key==='Enter')guardar()"><button id="boton" onclick="guardar()">Guardar</button><p><label>Moneda <select id="moneda"><option value="Auto">Detectar del texto</option><option value="UYU">Pesos uruguayos</option><option value="MXN">Pesos mexicanos</option><option value="ARS">Pesos argentinos</option><option value="USD">Dólares</option></select></label></p><p><label>Fecha del movimiento <input id="fecha" type="date"></label></p><p><label>Cómo pagué <select id="cuenta"><option>AMEX AM MCA</option><option>AMEX AM DRC</option><option>AMEX AM ERCA</option><option>AMEX PLAT MCA</option><option>AMEX PLAT DRC</option><option>Tarjeta BBva</option><option>VISA INB</option><option>TRANS BBVa</option><option>TRANS Galicia</option><option selected>Efectivo</option></select></label></p><p id="estado" role="status"></p><div id="ultimo" class="card" style="display:none"></div><small>Revisá la categoría y la moneda en la tabla; la interpretación del texto es básica.</small></section><section><h2>Leer un ticket</h2><p>Sacá una foto o elegí una imagen. Revisá los datos antes de guardar.</p><form id="formTicket" onsubmit="event.preventDefault();leerFoto()"><input id="foto" name="foto" type="file" accept="image/jpeg,image/png" capture="environment" required><button id="botonLeer" type="submit">Leer ticket</button></form><p id="estadoTicket" role="status"></p><div id="borradorTicket" style="display:none"><p><label>Comercio o descripción <input id="ticketDescripcion" type="text"></label></p><p><label>Fecha <input id="ticketFecha" type="date"></label> <label>Total <input id="ticketMonto" type="number" min="0.01" step="0.01"></label></p><p><label>Moneda <select id="ticketMoneda"><option>UYU</option><option>MXN</option><option>ARS</option><option>USD</option></select></label> <label>Rubro <select id="ticketCategoria"><option>Supermercado</option><option>Comida</option><option>Transporte</option><option>Casa</option><option>Servicios</option><option>Salud</option><option>Ropa</option><option>Ocio</option><option>Viajes</option><option>Educación</option><option>Otros</option></select></label></p><p><label>Cómo pagué <select id="ticketCuenta"><option>AMEX AM MCA</option><option>AMEX AM DRC</option><option>AMEX AM ERCA</option><option>AMEX PLAT MCA</option><option>AMEX PLAT DRC</option><option>Tarjeta BBva</option><option>VISA INB</option><option>TRANS BBVa</option><option>TRANS Galicia</option><option selected>Efectivo</option></select></label></p><p><label>Texto leído del ticket<br><textarea id="ticketTexto" rows="9" style="width:95%"></textarea></label></p><button id="botonTicket" type="button" onclick="guardarFoto()">Guardar gasto del ticket</button></div></section><section><label>Ver <select id="modo" onchange="cambiarModo()"><option>Todos</option><option>Día</option><option>Mes</option><option>Año</option></select></label> <label id="etiquetaFiltro" style="display:none">Fecha <input id="filtro" type="date" onchange="cargar()"></label></section><section><h2>Mis movimientos</h2><p id="cantidad">Cargando movimientos…</p><div class="scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Monto original</th><th>Equivalente MXN</th><th>Categoría</th><th>Cómo pagué</th><th>Descripción</th><th></th></tr></thead><tbody id="filas"></tbody></table></div><p><button onclick="csv()">Descargar CSV</button> <button id="botonConvertir" onclick="convertirPendientes()">Convertir pendientes a MXN</button></p><p id="estadoConversion" role="status"></p></section><section><h2>Gastos por rubro</h2><p>En pesos mexicanos para los movimientos mostrados, de mayor a menor.</p><div id="grafico"></div><div class="scroll"><table><thead><tr><th>Rubro</th><th>Gasto (MXN)</th><th>Porcentaje</th></tr></thead><tbody id="rubros"></tbody></table></div><p id="pendientes" style="display:none"><small></small></p></section></main><script>
 let datos=null;const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy=new Date();const fechaLocal=[hoy.getFullYear(),String(hoy.getMonth()+1).padStart(2,'0'),String(hoy.getDate()).padStart(2,'0')].join('-');
 $('fecha').value=fechaLocal;$('filtro').value=fechaLocal;cargar();
@@ -228,6 +247,7 @@ let guardando=false;
 function guardar(){if(guardando)return;let t=$('texto').value;if(!t.trim()){$('estado').textContent='Escribí un movimiento.';return}guardando=true;$('boton').disabled=true;$('estado').textContent='Guardando…';google.script.run.withSuccessHandler(m=>{guardando=false;$('boton').disabled=false;$('estado').textContent=m.mensaje;$('ultimo').style.display='block';$('ultimo').textContent=m.tipo+': '+m.monto.toFixed(2)+' '+m.moneda+' · '+m.categoria+' · '+m.cuenta+(m.montoMXN===null?' · Conversión a MXN pendiente':' · '+m.montoMXN.toFixed(2)+' MXN (tasa '+m.cotizacion.rate+', fecha '+m.cotizacion.date+')');$('texto').value='';cargar();$('texto').focus()}).withFailureHandler(e=>{guardando=false;$('boton').disabled=false;$('estado').textContent=e.message}).guardarTexto(t,$('fecha').value,$('moneda').value,$('cuenta').value)}
 function leerFoto(){let f=$('foto').files[0];if(!f)return;if(f.size>10*1024*1024){$('estadoTicket').textContent='La foto debe pesar menos de 10 MB.';return}$('botonLeer').disabled=true;$('estadoTicket').textContent='Leyendo ticket…';google.script.run.withSuccessHandler(d=>{$('botonLeer').disabled=false;$('borradorTicket').style.display='block';$('ticketDescripcion').value=d.comercio;$('ticketFecha').value=d.fecha||$('fecha').value;$('ticketMonto').value=d.monto;$('ticketMoneda').value=d.moneda;$('ticketTexto').value=d.texto;$('estadoTicket').textContent='Revisá el total, fecha y rubro antes de guardar.'}).withFailureHandler(e=>{$('botonLeer').disabled=false;$('estadoTicket').textContent=e.message}).leerTicket($('formTicket'))}
 function guardarFoto(){const d={descripcion:$('ticketDescripcion').value,fecha:$('ticketFecha').value,monto:$('ticketMonto').value,moneda:$('ticketMoneda').value,categoria:$('ticketCategoria').value,cuenta:$('ticketCuenta').value,textoTicket:$('ticketTexto').value};if(!d.descripcion||!d.fecha||!(Number(d.monto)>0)){$('estadoTicket').textContent='Completá descripción, fecha y total.';return}$('botonTicket').disabled=true;$('estadoTicket').textContent='Guardando gasto…';google.script.run.withSuccessHandler(m=>{$('botonTicket').disabled=false;$('estadoTicket').textContent=m.mensaje;$('borradorTicket').style.display='none';$('formTicket').reset();cargar()}).withFailureHandler(e=>{$('botonTicket').disabled=false;$('estadoTicket').textContent=e.message}).guardarTicket(d)}
+function convertirPendientes(){$('botonConvertir').disabled=true;$('estadoConversion').textContent='Consultando cotizaciones y convirtiendo…';google.script.run.withSuccessHandler(r=>{$('botonConvertir').disabled=false;$('estadoConversion').textContent=r.actualizados+' movimiento(s) convertido(s). '+r.pendientes+' pendiente(s).'+(r.errores.length?' Motivo: '+r.errores.join(' '):r.pendientes?' Volvé a pulsar para continuar.':'');cargar()}).withFailureHandler(e=>{$('botonConvertir').disabled=false;$('estadoConversion').textContent='No se pudieron convertir: '+e.message}).reintentarConversiones()}
 function cambiarModo(){$('etiquetaFiltro').style.display=$('modo').value==='Todos'?'none':'inline';cargar()}
 function cargar(){google.script.run.withSuccessHandler(p=>{datos=p;try{render()}catch(e){$('filas').innerHTML='<tr><td colspan="8">No pude mostrar los movimientos: '+esc(e.message)+'</td></tr>'}}).withFailureHandler(e=>$('filas').innerHTML='<tr><td colspan="8">No pude cargar los movimientos: '+esc(e.message)+'</td></tr>').datosPanel($('modo').value,$('filtro').value)}
 function render(){
