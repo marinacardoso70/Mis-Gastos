@@ -48,7 +48,7 @@ function cotizacionMXN_(moneda, fecha) {
   const url = 'https://api.frankfurter.dev/v2/rate/'+moneda+'/MXN?date='+fecha;
   let response;
   try { response = UrlFetchApp.fetch(url,{muteHttpExceptions:true}); }
-  catch(e) { throw new Error('No pude consultar el tipo de cambio. Probá de nuevo más tarde.'); }
+  catch(e) { throw new Error('No pude consultar '+moneda+'/MXN: '+String(e.message || e)); }
   if (response.getResponseCode() !== 200) throw new Error('El proveedor no devolvió cotización '+moneda+'/MXN para '+fecha+' (HTTP '+response.getResponseCode()+').');
   const d = JSON.parse(response.getContentText());
   if (!(Number(d.rate) > 0) || !d.date) throw new Error('La respuesta del tipo de cambio es inválida.');
@@ -58,6 +58,11 @@ function cotizacionMXN_(moneda, fecha) {
 }
 
 /** Un problema temporal del proveedor no debe impedir registrar el gasto. */
+function autorizarCotizaciones() {
+  const respuesta=UrlFetchApp.fetch('https://api.frankfurter.dev/v2/rate/usd/mxn',{muteHttpExceptions:true});
+  return 'Consulta autorizada. Respuesta HTTP '+respuesta.getResponseCode();
+}
+
 function cotizacionDisponible_(moneda, fecha) {
   try { return cotizacionMXN_(moneda, fecha); }
   catch (e) { return null; }
